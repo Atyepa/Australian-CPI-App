@@ -2,6 +2,7 @@ library(tidyverse)
 library(highcharter)
 library(ggthemes)
 library(DT)
+library(readsdmx)
 library(rsdmx)
 library(shinyWidgets)
 library(lubridate)
@@ -16,10 +17,10 @@ library(scales)
 #-----------------------------------------------------
 
 #--- SDMX data query URL---
-sdmx_dat <- "http://stat.data.abs.gov.au/restsdmx/sdmx.ashx/GetData/CPI/1.50.10001+20001+30002+40005+40006+40007+40008+30003+40009+131178+40010+40012+40014+40015+30001+40001+40002+40004+114120+114121+114122+131179+40027+40029+97549+97550+115501+40034+131180+40030+115520+30007+40025+40026+20006+30026+40089+40088+40087+30027+20002+131181+97551+97554+97555+30012+40045+40046+40047+97556+97557+40048+20003+115522+131186+131187+40053+97560+30016+97558+40055+115524+20004+131184+40058+131185+131182+97561+40060+115484+115485+40066+97563+40067+40095+97564+97565+115498+40096+115500+115486+131188+40094+40092+131189+40091+40093+20005+30024+40080+40084+40081+40085+40083+30025+115488+40077+40078+115489+131193+40098+131190+131191+97567+131192+30033+40101+40102+115492+97571+97572+40073+40072+97573+97574+40106+115495+115496+115497+126670+115528+131195.10.Q/all?startTime=1990-Q1&endTime=2025-Q1"
+sdmx_dat <- "https://api.data.abs.gov.au/data/ABS,CPI,1.0.0/1.114120+115492+115522+115528+131179+131180+131181+131182+131184+131186+131187+131188+131189+131191+131193+131195+30001+30002+30003+30007+30012+30016+30022+30024+30025+30026+30027+30033+40106+97556+97561+97563+97565+114121+114122+1144+115484+115485+115495+115496+115497+115498+115500+115501+115520+115524+115529+131178+131183+131185+131190+131192+131194+30014+40001+40002+40004+40005+40006+40007+40008+40009+40010+40012+40014+40015+40025+40026+40027+40029+40030+40034+40045+40046+40047+40048+40053+40055+40058+40060+40066+40067+40072+40073+40077+40078+40080+40081+40083+40084+40085+40086+40087+40088+40089+40090+40091+40092+40093+40094+40095+40096+40098+40101+40102+97549+97550+97551+97554+97555+97557+97558+97559+97560+97564+97567+97571+97572+97573+97574+10001+20001+20002+20003+20004+20005+20006+115486+115488+115489+115493+126670+999901+999902+999903.10.50.Q?startPeriod=2000-Q3&endPeriod=2029-Q3"
 
 #--- SDMX DSD URL---
-sdmx_dsd <- "http://stat.data.abs.gov.au/restsdmx/sdmx.ashx/GetDataStructure/CPI"
+sdmx_dsd <- "https://api.data.abs.gov.au/dataflow/ABS/CPI/1.0.0?references=all&detail=referencepartial"
 
 #---Read in SDMX---
 dat <- readSDMX(sdmx_dat, dsd = TRUE)
@@ -34,8 +35,15 @@ dat <- as.data.frame(dat, labels = TRUE)
 
 #--- Select only useful cols ---
 CPIdat <- dat %>% 
-  select(7,9,18,19) %>% 
-  rename("CPI_components" = INDEX_label.en, "Qtr" = obsTime, "Index value" = obsValue)
+  select(3,4,13,14) %>% 
+  rename("CPI_components" = INDEX_label.en, 
+         "Qtr" = obsTime, "Index value" = obsValue)
+
+# Add numeric INDEX/char code
+CPIdat <- CPIdat %>% 
+  mutate(code = INDEX, 
+         INDEX = as.numeric(INDEX)) %>% 
+  select(INDEX, code, CPI_components, Qtr, `Index value`)
 
 #---Make Qtr into date formats---
 CPIdat <- CPIdat %>% 
@@ -43,11 +51,6 @@ CPIdat <- CPIdat %>%
   mutate(endqtr = ceiling_date(startqtr, "quarter")) %>% 
   mutate(date = endqtr -1) %>% 
   mutate(date = floor_date(date, "month"))
-
-#---Make INDEX numeric ---
-CPIdat <- CPIdat %>% 
-  mutate(INDEX = as.numeric(INDEX))
-
 
 #--- Start series from 20 years earlier---
 dmax <- max(CPIdat$date)
@@ -60,17 +63,11 @@ CPIdatL <- CPIdat %>%
 latest <- format(dmax,"%b %Y")
 now <- format(today(),"%d %B %Y")
 
-
-#---CPI components ---
-allcpi <- CPIdatL %>% 
-  mutate(order = row_number()) %>% 
-  group_by(INDEX, CPI_components) %>% 
-  filter(order == min(order)) %>% 
-  ungroup() %>% 
-  select(8,2) %>% 
-  mutate(order = row_number())
-  
 #---Make CPI components list ---
+allcpi <- CPIdatL %>% 
+  select(CPI_components) %>% 
+  distinct()
+
 list <- allcpi 
 List <- as.list(list$CPI_components)
 
@@ -269,8 +266,8 @@ ui <- fluidPage(
                            (paste0("Australian Bureau of Statistics,
                                    Consumer Price Index (CPI) 17th series: ", latest)))),
                             tags$p(paste0("Retrieved from"),
-                                     tags$a(href="http://stat.data.abs.gov.au/",
-                                            (paste0("ABS.Stat: ", now))))
+                                     tags$a(href="https://explore.data.abs.gov.au/?fs[0]=ABS%20Topics%2C0%7CECONOMY%23ECONOMY%23&pg=0&fc=ABS%20Topics",
+                                            (paste0(".Stat Data Explorer: ", now))))
              
     )))
     
