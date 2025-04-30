@@ -3,7 +3,10 @@ library(highcharter)
 library(ggthemes)
 library(DT)
 library(readsdmx)
+library(shiny)
+library(shinydashboard)
 library(shinyWidgets)
+library(shinythemes)
 library(lubridate)
 library(zoo)
 library(writexl)
@@ -24,13 +27,17 @@ dat <- read_sdmx(sdmx_dat)
 
 #--- Select only useful cols ---
 CPIdat <- dat %>% 
-  select(3,5,6) %>% 
+  select(INDEX, ObsDimension, ObsValue) %>% 
   rename("Qtr" = ObsDimension, "Index value" = ObsValue) %>% 
   mutate(CPI_components = "")
 
-# Load labels
+# Load labels - DROP Classn_level and make unique eg.group to max
 label <- read.xlsx("https://github.com/Atyepa/Australian-CPI-App/raw/main/CPI%20code%20labels.xlsx") %>% 
-  mutate(code = as.numeric(code))
+  mutate(code = as.numeric(code)) %>% 
+  select(-Classn_level) %>% 
+  group_by(Group, label) %>% 
+  summarise(code = max(code)) %>% 
+  ungroup()
 
 # Add numeric INDEX/char code
 CPIdat <- CPIdat %>% 
@@ -39,10 +46,8 @@ CPIdat <- CPIdat %>%
         `Index value` = as.numeric(`Index value`)) %>% 
     select(INDEX, code, CPI_components, Qtr, `Index value`) %>% 
   left_join(label, by = c("INDEX" = "code")) %>%                          #  Attach labels
- # filter(Group %in% c("Food and non-alcoholic beverages", "Allgroups")) %>% 
   mutate(CPI_components = label) %>% 
   select(-label, -code)
-  
 
 #---Make Qtr into date formats---
 CPIdat <- CPIdat %>% 
@@ -70,6 +75,22 @@ allcpi <- CPIdatL %>%
 list <- allcpi 
 List <- as.list(list$CPI_components)
 
+# Make an numeric index for Qtr (to filter)
+Qtr <- CPIdatL %>% 
+  select(Qtr) %>% 
+  distinct() %>% 
+  mutate(idx = row_number())
+
+Qtr_label <- Qtr %>% 
+  select(Qtr) %>% 
+  rename(Qtr_label = Qtr)
+
+Qtr_label <- as.list(Qtr_label$Qtr_label)
+
+# Attach idx 
+CPIdatL <- CPIdatL %>% 
+  left_join(Qtr, by = "Qtr")
+
 #---dummy df for when no CPI item selected---
 INDEX <- c(0,0)
 CPI_components <- c("NULL")
@@ -87,41 +108,82 @@ abscol <- c("#4FADE7", 	"#1A4472", 	"#F29000", 	"#993366", 	"#669966", 	"#99CC66
 #----------------------------------------
 #---- SHINY DASHBOARD----
 #----------------------------------------
-library(shiny)
-library(shinydashboard)
-library(shinyWidgets)
 
 #------------
 #----UI----
 #------------
-ui <- fluidPage(
-  
-  tags$style(type="text/css",
-             ".shiny-output-error { visibility: hidden; }",
-             ".shiny-output-error:before { visibility: hidden; }"
-  ),
+ui <- fluidPage(theme = shinytheme("darkly"),                
+                tags$head(tags$style(HTML(
+                  "
+    .dataTables_length label,
+    .dataTables_filter label,
+    .dataTables_info {
+        color: white!important;
+    }
+
+    .paginate_button {
+        background: white!important;
+    }
+
+    thead {
+        color: white;
+    }
+
+    table.dataTable {
+        background-color: white!important;
+        color: black!important;
+    }
+
+    table.dataTable th,
+    table.dataTable td {
+        color: black!important;
+    }
+
+    table.dataTable thead th {
+        background-color: white!important;
+        color: black!important;
+    }
+
+    table.dataTable thead td {
+        background-color: white!important;
+        color: black!important;
+    }
+
+    .paginate_button,
+    .paginate_button:hover,
+    .paginate_button:active {
+        color: black!important;
+        background-color: white!important;
+        border-color: black!important;
+    }
+    "))),
   
   headerPanel("CPI time series - weighted average of eight capital cities"),
   sidebarPanel(
     
     radioButtons ("choosetable", "Index or Percent change:",
-                  choices = c("Index value   " = "index", "Percent change" = "pc"),
-                  selected = c("pc"),inline = T),    
+                  choices = c("Index value   " = "index", "Percent change" = "pc", "Annual average percent" = "avg"),
+                   selected = c("pc"),inline = T),    
     
-    sliderInput("dateRange","Date range:",
-                min = as.Date(dmin),
-                max = as.Date(dmax),
-                value=as.Date(c(dmin, dmax)),
-                step = 3,
-                timeFormat="%b %Y"),
+   conditionalPanel(
+      condition = "input.choosetable == 'pc'",
+    
+    radioButtons ("plottype", "Chart type:",
+                  choices = c("Line (time-series)" = "Line",
+                              "Bar (total change)" = "Bar"),
+                  selected = c("Line"),inline = F)
+    ),
+    
+    sliderTextInput("QtrRange", "Quarter range:",
+                choices = Qtr_label, 
+                selected = c(Qtr_label[1], Qtr_label[length(Qtr_label)]),
+                grid = TRUE), 
+    
     
     tags$div( tags$hr()),
     tags$div(
-      tags$h4(tags$strong("Select from CPI groups, sub-groups and expenditure classes:"))),
-    
-    # pickerInput ("List", " ", choices= c(List),
-    #              selected = c("All groups CPI"), multiple = TRUE ),
-    
+      tags$h4(tags$strong("Select CPI items:"))),
+        
     
     pickerInput ("List", " ", choices= c("All groups CPI " = "All groups CPI", 
                                          "Food and non-alcoholic beverages " = "Food and non-alcoholic beverages", 
@@ -258,104 +320,123 @@ ui <- fluidPage(
                 tabPanel("Graph", highchartOutput("hcontainer",height = "720px")),
                 tabPanel("Table", verbatimTextOutput("message"), DT::dataTableOutput("table"))
     ),
-    
-    
+       
     # adding the div tag to the mainpanel
     tags$div(class="header", checked=NA,
              tags$p(paste0("Source:"),
                     tags$a(href="https://www.abs.gov.au/ausstats/abs@.nsf/mf/6401.0",
                            (paste0("Australian Bureau of Statistics,
-                                   Consumer Price Index (CPI) 17th series: ", latest)))),
+                                   Consumer Price Index (CPI): ", latest)))),
                             tags$p(paste0("Retrieved from"),
                                      tags$a(href="https://explore.data.abs.gov.au/?fs[0]=ABS%20Topics%2C0%7CECONOMY%23ECONOMY%23&pg=0&fc=ABS%20Topics",
                                             (paste0(".Stat Data Explorer: ", now))))
              
     )))
-    
-    
-
-#==========================================
-# Server
-#=========================================
+  
+#------------
+# Server ---
+#------------
 server <- function(input, output) {  
-  
-  
-  I <- reactive({
+   
+ I <- reactive({
     list (FoodGROUP = input$List) })    
+   
+ # Filter user-selected quarters 
   
-  df_ <- reactive({ dfd %>% 
-      mutate(date = case_when(
-        index == 1 ~ input$dateRange[1],
-        index == 2 ~ input$dateRange[2]
-        ))
-    }) 
-  
-  
-  df <- reactive({ CPIdatL %>%
-      group_by(CPI_components) %>%
-      arrange(date) %>%
-      mutate(nxt = if_else(date< max(date), lead(date), date))%>%
-      filter(nxt >= input$dateRange[1]) %>%  
-      filter(date <= input$dateRange[2]) %>%  
-      mutate(Date = format(date, "%b %Y")) %>% 
-      filter(CPI_components %in% I()$FoodGROUP)
-  
+ filteredCPI <- reactive({ 
+    start_quarter <- input$QtrRange[1]
+    end_quarter <- input$QtrRange[2]
+    start_idx <- CPIdatL %>% filter(Qtr == start_quarter) %>% select(idx) %>% pull() %>% first()
+    end_idx <- CPIdatL %>% filter(Qtr == end_quarter) %>% select(idx) %>% pull() %>% first()
+    filteredCPI <- CPIdatL %>% filter(idx >= start_idx & idx <= end_idx)
+    # Return the filtered data
+    filteredCPI
+    
   })
   
-  dfc <- reactive({ CPIdatL %>%
+  dfc <- reactive({ filteredCPI() %>%
       group_by(CPI_components) %>%
       arrange(date) %>%
-      mutate(nxt = if_else(date< max(date), lead(date), date))%>%
-      filter(nxt >= input$dateRange[1]) %>%  
-      filter(date <= input$dateRange[2]) %>%  
       mutate(indcum = cumsum(`Index value`)) %>%
-      mutate(change = if_else(date <= input$dateRange[1],0, round(`Index value`/ min(indcum)*100-100,1))) %>% 
+      mutate(change = round(`Index value`/ min(indcum)*100-100,1)) %>% 
       mutate(Date = format(date, "%b %Y")) %>% 
       filter(CPI_components %in% I()$FoodGROUP) 
   })
   
-  #--- Spread items into columns and combine into table for output tab ---
-  
-  tabc  <- reactive({ dfc() %>%
+  # df that only keeps first & last dates & make 'ann_avg'
+  dfs <- reactive({
+    CPIdatL %>%
+      filter(CPI_components %in% I()$FoodGROUP) %>%
+      filter(Qtr == input$QtrRange[1] | Qtr == input$QtrRange[2]) %>%
       group_by(CPI_components) %>%
-      select(date, CPI_components, change) %>%
-      spread(CPI_components, change) %>%
-      rename_if(is.numeric, ~(paste0(., ", % change" ))) %>%  
-      # select(sort(tidyselect::peek_vars())) %>% 
-      mutate(Quarter = format(date, "%b %Y")) %>% 
-      arrange(date) %>% 
-      select(-date) %>% 
-      select(Quarter, everything()) 
-     
-          })
+      mutate(Date = format(date, "%b %Y")) %>%
+      summarize(
+        change = if(n() == 2) round((last(`Index value`) - first(`Index value`)) / first(`Index value`) * 100, 1) else NA_real_,
+        index_change = if(n() == 2) (last(`Index value`) - first(`Index value`)) else NA_real_,
+        num_years = (max(idx) - min(idx)) / 4,
+        first_index = first(`Index value`),
+        last_index = last(`Index value`),
+        ann_avg = if(n() == 2) round(((last_index / first_index)^(1 / num_years)) - 1, 4) * 100 else NA_real_,
+        period = paste0(input$QtrRange[1], " to ", input$QtrRange[2]),
+        .groups = "drop"
+      )
+  })  
+   
+output$message <- renderText({ 
   
-  
-  output$message <- renderText({ 
+  if(is.null(I()$FoodGROUP)){
+    msg <- "No CPI items selected"}
     
-    if(is.null(I()$FoodGROUP)){
-        msg <- "No CPI items selected"}
-      
-    
-    if(!is.null(I()$FoodGROUP)){
-      msg <- ""}
-    
+  if(!is.null(I()$FoodGROUP)){
+    msg <- ""}
     msg
-    
-    }) 
-  
-  
-  output$table = DT::renderDataTable({
-    tabc()
-    
-  })
-  
-  
-  output$hcontainer <- renderHighchart({
-    
+  }) 
+ 
+# Define the custom function to apply font settings 
+apply_font_settings_bar <- function(hc) {
+  hc %>%
+    hc_yAxis(title = list(text = "Percent change", style = list(fontSize = '16px')), 
+             labels = list(style = list(fontSize = '14px'))) %>%
+    hc_xAxis(title = list(text = "CPI items", style = list(fontSize = '18px')), 
+             labels = list(style = list(fontSize = '16px'))) %>%
+    hc_title(style = list(fontSize = '20px')) %>%
+    hc_plotOptions(
+      series = list(
+        dataLabels = list(
+          enabled = TRUE,
+          style = list(fontSize = '14px')
+        ),
+        marker = list(enabled = FALSE),
+        stacking = FALSE,
+        grouping = FALSE  # Disable automatic grouping
+      ))
+}
+
+apply_font_settings_line <- function(hc) {
+  hc %>%
+    hc_yAxis(title = list(text = "Percent change", style = list(fontSize = '18px')), 
+             labels = list(style = list(fontSize = '16px'))) %>%
+    hc_xAxis(title = list(text = "Year", style = list(fontSize = '16px')), 
+             labels = list(style = list(fontSize = '16px'))) %>%
+    hc_title(style = list(fontSize = '20px')) %>%
+    hc_legend(itemStyle = list(fontSize = '16px')) %>%  # Set the font size for the legend
+    hc_plotOptions(
+      series = list(
+        dataLabels = list(
+          enabled = FALSE
+        ),
+        marker = list(enabled = TRUE),
+        lineWidth = 3,  # Set the line width
+        stacking = FALSE,
+        grouping = FALSE  # Disable automatic grouping
+      ))
+}
+ 
+  output$hcontainer <- renderHighchart({    
     
     if(is.null(I()$FoodGROUP)) {
-      
-      hc <- df_() %>%
+
+      hc <- dfc() %>%
         hchart(.,
                type = "line",
                hcaes(x = date,
@@ -369,52 +450,170 @@ server <- function(input, output) {
         hc_plotOptions(series = list(marker = list(enabled = FALSE)))
     }
     
-    
-    if(input$choosetable == "index" & !is.null(I()$FoodGROUP)) {
-      
-        hc <- df() %>%
+    if(input$choosetable == "index" & !is.null(I()$FoodGROUP)) {      
+        hc <- dfc() %>%
         hchart(.,
                type = "line",
                hcaes(x = Date,
                      y = `Index value`,
                      group = CPI_components)) %>%
-        hc_xAxis(title = list(text = "Quarter")) %>%
-        hc_yAxis(title = list(text = "Index")) %>%
+        hc_xAxis(title = list(text = "Quarter"),
+                 crosshair = TRUE) %>%  
+        apply_font_settings_line() %>%
+        hc_yAxis(title = list(text = "Index")) %>%  
         hc_add_theme(hc_theme_economist()) %>%
-        hc_title(text = paste0("Inflation index of selected CPI groups")) %>%
+        hc_title(text = paste0("Consumer price index value,"," ", input$QtrRange[1] ," ", "to ", input$QtrRange[2])) %>%
         hc_colors(abscol) %>%
         hc_plotOptions(series = list(marker = list(enabled = FALSE)))
-    }
+    }    
     
-    
-    if(input$choosetable == "pc" & !is.null(I()$FoodGROUP)) {
-
+    if(input$choosetable == "pc" & !is.null(I()$FoodGROUP) & input$plottype == "Line") {
       hc <- dfc() %>%
         hchart(.,
                type = "line",
                hcaes(x = Date,
                      y = round(change,1),
                      group = CPI_components)) %>%
-        hc_xAxis(title = list(text = "Quarter")) %>%
+        hc_xAxis(title = list(text = "Quarter"),
+                 crosshair = TRUE)%>%  
         hc_yAxis(title = list(text = "Percent change")) %>%
+        apply_font_settings_line() %>%
         hc_add_theme(hc_theme_economist()) %>%
-        hc_title(text = paste0("Percent inflation over selected period")) %>%
-        hc_colors(abscol) %>%
+        hc_title(text = paste0("Percent change in inflation,"," ", input$QtrRange[1] ," ", "to ", input$QtrRange[2])) %>%
+         hc_colors(abscol) %>%
         hc_plotOptions(series = list(marker = list(enabled = FALSE)))
     }
-    
-    
+        
+    if(input$choosetable == "pc" & !is.null(I()$FoodGROUP) & input$plottype == "Bar") {      
+      hc <- dfs() %>%
+        filter(!is.na(change)) %>%
+        mutate(CPI_components = fct_reorder(CPI_components, desc(change))) %>%       
+        hchart(.,
+               type = "bar",
+               hcaes(x = CPI_components, y = round(change,1), group = CPI_components)) %>%
+        hc_xAxis(title = list(text = "Component")) %>%
+        hc_yAxis(title = list(text = "Percent change")) %>%
+        apply_font_settings_bar() %>%
+        hc_add_theme(hc_theme_economist()) %>%
+        hc_title(text = paste0("Percent change in inflation,"," ", input$QtrRange[1] ," ", "to ", input$QtrRange[2])) %>%
+        hc_colors("#4FADE7") %>%
+        hc_plotOptions(
+          series = list(
+            marker = list(enabled = FALSE),
+            stacking = FALSE,
+            grouping = FALSE  
+          ))
+    }
+        
+    if(input$choosetable == "avg" & !is.null(I()$FoodGROUP)) {      
+      hc <- dfs() %>%
+        filter(!is.na(change)) %>%
+        mutate(CPI_components = fct_reorder(CPI_components, desc(change))) %>% 
+        hchart(.,
+              type = "bar",
+               hcaes(x = CPI_components, y = round(ann_avg,1), group = CPI_components)) %>%
+        hc_xAxis(title = list(text = "Component")) %>%
+        hc_yAxis(title = list(text = "Percent change")) %>%
+        apply_font_settings_bar() %>%
+        hc_add_theme(hc_theme_economist()) %>%
+        hc_title(text = paste0("Annual average change in inflation,"," ", input$QtrRange[1] ," ", "to ", input$QtrRange[2])) %>%
+        hc_colors("#4FADE7") %>%
+        hc_plotOptions(
+          series = list(
+            marker = list(enabled = FALSE),
+            stacking = FALSE,
+            grouping = FALSE  
+          ))
+    }
+       
     hc
+      })
   
+  #--- Spread items into columns and combine into table for output tab ---
+  index  <- reactive({ dfc() %>%
+      group_by(CPI_components) %>%
+      select(date, CPI_components, `Index value`) %>%
+      spread(CPI_components, `Index value`) %>%
+      rename_if(is.numeric, ~(paste0(., ", Index value" ))) %>%  
+      mutate(Quarter = format(date, "%b %Y")) %>% 
+      arrange(date) %>% 
+      select(-date) %>% 
+      select(Quarter, everything())     
+  })
+  
+ pcl <- reactive({ dfc() %>%
+      group_by(CPI_components) %>%
+      select(date, CPI_components, change) %>%
+      spread(CPI_components, change) %>%
+      rename_if(is.numeric, ~(paste0(., ", Cuml. chg (%)" ))) %>%  
+      mutate(Quarter = format(date, "%b %Y")) %>% 
+      arrange(date) %>% 
+      select(-date) %>% 
+      select(Quarter, everything())     
+  })
+  
+ pcb  <- reactive({ dfs() %>%  
+      group_by(CPI_components) %>%
+      select(period, CPI_components, change) %>%
+      spread(CPI_components, change) %>%
+      rename_if(is.numeric, ~(paste0(., ", Total chg (%)" ))) %>%  
+      select(period, everything())     
+  })
+  
+  avg  <- reactive({ dfs() %>%
+      group_by(CPI_components) %>%
+      select(period, CPI_components, ann_avg) %>%
+      spread(CPI_components, ann_avg) %>%
+      rename_if(is.numeric, ~(paste0(., ", Annual chg (%)" ))) %>%  
+      select(period, everything())     
+  })
+   
+  # Table for display 
+  output$table = DT::renderDataTable({    
+  if(input$choosetable == "index") { 
+    table <- index 
+    }
+  
+  if(input$choosetable == "avg") { 
+    table <- avg 
+  }
+  
+  if(input$choosetable == "pc" & input$plottype == "Line") { 
+    table <- pcl
+  }
+  
+  if(input$choosetable == "pc" & input$plottype == "Bar") { 
+    table <- pcb 
+  }
+  
+  table()
     })
   
-  # Downloadable xlsx --
+  # Table for downloadable xlsx 
+  table  <- reactive({     
+    if(input$choosetable == "index") { 
+      table <- index 
+    }
+    
+    if(input$choosetable == "avg") { 
+      table <- avg 
+    }
+    
+    if(input$choosetable == "pc" & input$plottype == "Line") { 
+      table <- pcl
+    }
+    
+    if(input$choosetable == "pc" & input$plottype == "Bar") { 
+      table <- pcb  }
+    
+    table()
+    })
+   
   output$downloadTb <- downloadHandler(
     filename = function() { paste("CPI group percent change", ".xlsx") },
-    content = function(file) { write_xlsx(tabc(), path = file) }
+    content = function(file) { write_xlsx(table(), path = file) }
   )
-  
-}
+  }
 
 #========================================  
 shinyApp(ui, server)
