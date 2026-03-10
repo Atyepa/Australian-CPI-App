@@ -51,7 +51,10 @@ parse_abs_xlsx <- function(path) {
   dates  <- as.Date(dat[[1]])
   vals   <- dat[, -1]
 
-  map_dfr(seq_along(series_name), function(i) {
+  # De-duplicate: keep first occurrence of each measure+name combination
+  keep_idx <- which(!duplicated(paste(series_measure, series_name)))
+
+  map_dfr(keep_idx, function(i) {
     tibble(
       date    = dates,
       series  = series_name[i],
@@ -116,7 +119,7 @@ ui <- fluidPage(theme = shinytheme("darkly"),
                              "Cumulative % change"    = "pc",
                              "Year-on-year %"         = "yoy",
                              "Annual average %"       = "avg"),
-                 selected = "yoy", inline = FALSE),
+                 selected = "pc", inline = FALSE),
 
     conditionalPanel(
       condition = "input.choosetable == 'pc' || input.choosetable == 'yoy'",
@@ -304,7 +307,18 @@ server <- function(input, output, session) {
 
 
   output$message <- renderText({
-    if (is.null(I()$sel)) "No CPI items selected" else ""
+    if (is.null(I()$sel)) return("No CPI items selected")
+    # Warn about series unavailable in index-based views
+    if (input$choosetable %in% c("index", "pc", "avg")) {
+      index_series <- unique(index_dat$CPI_components)
+      missing <- setdiff(I()$sel, index_series)
+      missing <- missing[!grepl("^---", missing)]
+      if (length(missing) > 0)
+        return(paste0("Note: the following series have no index numbers at monthly frequency ",
+                      "and only appear in the Year-on-year % view:\n",
+                      paste(missing, collapse = ", ")))
+    }
+    ""
   })
 
 
