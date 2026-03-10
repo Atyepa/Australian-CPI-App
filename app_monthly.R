@@ -173,7 +173,7 @@ ui <- fluidPage(theme = shinytheme("darkly"),
         "....Tobacco"                                                      = "Tobacco",
         "..Insurance and financial services"                               = "Insurance and financial services"
       ),
-      selected = "All groups CPI",
+      selected = "All groups CPI, seasonally adjusted",
       multiple = TRUE,
       options  = list(`actions-box` = TRUE)
     ),
@@ -183,8 +183,8 @@ ui <- fluidPage(theme = shinytheme("darkly"),
 
   mainPanel(
     tabsetPanel(type = "tabs",
-      tabPanel("Graph", highchartOutput("hcontainer", height = "720px")),
-      tabPanel("Table", verbatimTextOutput("message"), DT::dataTableOutput("table"))
+      tabPanel("Graph", verbatimTextOutput("message_graph"), highchartOutput("hcontainer", height = "720px")),
+      tabPanel("Table", verbatimTextOutput("message"),       DT::dataTableOutput("table"))
     ),
     uiOutput("footer_ui")
   )
@@ -306,20 +306,22 @@ server <- function(input, output, session) {
   })
 
 
-  output$message <- renderText({
+  view_note <- reactive({
     if (is.null(I()$sel)) return("No CPI items selected")
-    # Warn about series unavailable in index-based views
     if (input$choosetable %in% c("index", "pc", "avg")) {
       index_series <- unique(index_dat$CPI_components)
       missing <- setdiff(I()$sel, index_series)
       missing <- missing[!grepl("^---", missing)]
       if (length(missing) > 0)
-        return(paste0("Note: the following series have no index numbers at monthly frequency ",
-                      "and only appear in the Year-on-year % view:\n",
-                      paste(missing, collapse = ", ")))
+        return(paste0("Note: '", paste(missing, collapse = "', '"),
+                      "' is published as annual % change only for the monthly indicator",
+                      " \u2014 select Year-on-year % view for this series."))
     }
     ""
   })
+
+  output$message       <- renderText({ view_note() })
+  output$message_graph <- renderText({ view_note() })
 
 
   ## Font helpers
