@@ -110,7 +110,7 @@ ui <- fluidPage(theme = shinytheme("darkly"),
         border-color: black!important; }
   "))),
 
-  headerPanel("Monthly CPI Indicator - weighted average of eight capital cities"),
+  headerPanel("Monthly CPI Indicator (Cat. 6484.0 - Discontinued Sep 2025) - weighted average of eight capital cities"),
 
   sidebarPanel(
 
