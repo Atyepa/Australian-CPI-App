@@ -216,8 +216,11 @@ server <- function(input, output, session) {
 
   #--- Load data once per session ---
   cpi_raw    <- read_cpi_6401_monthly()
-  index_dat  <- cpi_raw$index       # date, CPI_components, `Index value`
-  annual_dat <- cpi_raw$annual_pct  # date, CPI_components, annual_pct
+
+  # Trim to monthly series only (Apr 2024 onward); quarterly back-series excluded
+  monthly_start <- as.Date("2024-04-01")
+  index_dat  <- cpi_raw$index      %>% filter(date >= monthly_start)
+  annual_dat <- cpi_raw$annual_pct %>% filter(date >= monthly_start)
 
   dmax   <- max(index_dat$date)
   latest <- format(dmax, "%b %Y")
@@ -244,13 +247,10 @@ server <- function(input, output, session) {
 
 
   #--- Dynamic UI ---
-  # Default start = Apr 2024 (when monthly collection began); full history available by sliding back
-  default_start <- if ("Apr 2024" %in% Month_label) "Apr 2024" else Month_label[1]
-
   output$MonthRange_ui <- renderUI({
     sliderTextInput("MonthRange", "Month range:",
                     choices  = Month_label,
-                    selected = c(default_start, Month_label[length(Month_label)]),
+                    selected = c(Month_label[1], Month_label[length(Month_label)]),
                     grid     = TRUE)
   })
 
