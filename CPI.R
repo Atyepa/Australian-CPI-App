@@ -20,12 +20,85 @@ library(rsconnect)
 #-----------------------------------------------------
 
 #--- SDMX data query URL---
-sdmx_dat <- "https://api.data.abs.gov.au/data/ABS,CPI,2.0.0/1.114120+115492+115522+115528+131179+131180+131181+131182+131184+131186+131187+131188+131189+131191+131193+131195+30001+30002+30003+30007+30012+30016+30022+30024+30025+30026+30027+30033+40106+97556+97561+97563+97565+114121+114122+1144+115484+115485+115495+115496+115497+115498+115500+115501+115520+115524+115529+131178+131183+131185+131190+131192+131194+30014+40001+40002+40004+40005+40006+40007+40008+40009+40010+40012+40014+40015+40025+40026+40027+40029+40030+40034+40045+40046+40047+40048+40053+40055+40058+40060+40066+40067+40072+40073+40077+40078+40080+40081+40083+40084+40085+40086+40087+40088+40089+40090+40091+40092+40093+40094+40095+40096+40098+40101+40102+97549+97550+97551+97554+97555+97557+97558+97559+97560+97564+97567+97571+97572+97573+97574+10001+20001+20002+20003+20004+20005+20006+115486+115488+115489+115493+126670+999901+999902+999903.10.50.Q?startPeriod=2000-Q3&endPeriod=2027-Q1"
+sdmx_dat <- "https://data.api.abs.gov.au/rest/data/ABS,CPI,2.0.0/1.114120+115492+115522+115528+131179+131180+131181+131182+131184+131186+131187+131188+131189+131191+131193+131195+30001+30002+30003+30007+30012+30016+30022+30024+30025+30026+30027+30033+40106+97556+97561+97563+97565+114121+114122+1144+115484+115485+115495+115496+115497+115498+115500+115501+115520+115524+115529+131178+131183+131185+131190+131192+131194+30014+40001+40002+40004+40005+40006+40007+40008+40009+40010+40012+40014+40015+40025+40026+40027+40029+40030+40034+40045+40046+40047+40048+40053+40055+40058+40060+40066+40067+40072+40073+40077+40078+40080+40081+40083+40084+40085+40086+40087+40088+40089+40090+40091+40092+40093+40094+40095+40096+40098+40101+40102+97549+97550+97551+97554+97555+97557+97558+97559+97560+97564+97567+97571+97572+97573+97574+10001+20001+20002+20003+20004+20005+20006+115486+115488+115489+115493+126670+999901+999902+999903.10.50.Q?startPeriod=2000-Q3&endPeriod=2027-Q1"
 
 #--- ABS preferred colours---
 abscol <- c("#4FADE7", 	"#1A4472", 	"#F29000", 	"#993366", 	"#669966", 	"#99CC66",
             "#CC9966", 	"#666666", 	"#8DD3C7", 	"#BEBADA", 	"#FB8072", 	"#80B1D3",
             "#FDB462", 	"#B3DE69", 	"#FCCDE5", 	"#D9D9D9", 	"#BC80BD", 	"#CCEBC5", 	"#ffcc99")
+
+#----------------------------------------------------------------------
+#---- Chart styling (matches NNPAS 2023 app) --------------------------
+#   Dark/transparent on screen (blends into shinytheme('darkly'));
+#   ALWAYS white background on export for slides/Word/PDF. Apply LAST.
+#----------------------------------------------------------------------
+
+# Sanitise a chart title into a safe export filename.
+clean_fname <- function(x) gsub("[^A-Za-z0-9]+", "_", x)
+
+style_plot <- function(hc, filename = "CPI_chart", dark = TRUE, font_px = 16) {
+
+  pal <- if (dark)
+    list(bg = "transparent", ink = "#E6EDF3", lab = "#C9D1D9",
+         grid = "#30363D", axis = "#8B949E", err = "#C9D1D9")
+  else
+    list(bg = "#FFFFFF", ink = "#0D1117", lab = "#333333",
+         grid = "#E6E6E6", axis = "#888888", err = "#333333")
+
+  fs_lab   <- paste0(font_px, "px")       # axis ticks, legend, data labels
+  fs_title <- paste0(font_px + 2, "px")   # axis titles
+
+  has_title    <- !is.null(hc$x$hc_opts$title$text)    && nzchar(hc$x$hc_opts$title$text)
+  has_subtitle <- !is.null(hc$x$hc_opts$subtitle$text) && nzchar(hc$x$hc_opts$subtitle$text)
+
+  # ---- on-screen (working) theme ----
+  hc <- hc %>%
+    hc_chart(backgroundColor = pal$bg, plotBackgroundColor = pal$bg,
+             style = list(fontFamily = "Open Sans, Arial, Helvetica, sans-serif")) %>%
+    hc_xAxis(lineColor = pal$axis, tickColor = pal$axis,
+             title  = list(style = list(color = pal$ink, fontSize = fs_title)),
+             labels = list(style = list(color = pal$lab, fontSize = fs_lab))) %>%
+    hc_yAxis(gridLineColor = pal$grid, lineColor = pal$axis, tickColor = pal$axis,
+             title  = list(style = list(color = pal$ink, fontSize = fs_title)),
+             labels = list(style = list(color = pal$lab, fontSize = fs_lab))) %>%
+    hc_legend(itemStyle = list(color = pal$ink, fontSize = fs_lab)) %>%
+    hc_plotOptions(
+      series   = list(dataLabels = list(style = list(color = pal$ink, fontSize = fs_lab, textOutline = "none"))),
+      errorbar = list(color = pal$err, whiskerLength = "30%", stemWidth = 1.5))
+  if (has_title) {
+    hc <- hc %>% hc_title(style = list(color = pal$ink))
+  } else {
+    hc <- hc %>% hc_title(text = "")
+  }
+  if (has_subtitle) hc <- hc %>% hc_subtitle(style = list(color = pal$lab))
+
+  # ---- export overrides: ALWAYS publication-light, applied only on download ----
+  exp <- list(
+    chart  = list(backgroundColor = "#FFFFFF", plotBackgroundColor = "#FFFFFF"),
+    xAxis  = list(lineColor = "#888888", tickColor = "#888888",
+                  title  = list(style = list(color = "#0D1117", fontSize = fs_title)),
+                  labels = list(style = list(color = "#333333", fontSize = fs_lab))),
+    yAxis  = list(gridLineColor = "#E6E6E6", lineColor = "#888888", tickColor = "#888888",
+                  title  = list(style = list(color = "#0D1117", fontSize = fs_title)),
+                  labels = list(style = list(color = "#333333", fontSize = fs_lab))),
+    legend = list(itemStyle = list(color = "#0D1117", fontSize = fs_lab)),
+    plotOptions = list(
+      series   = list(dataLabels = list(style = list(color = "#0D1117", fontSize = fs_lab, textOutline = "none"))),
+      errorbar = list(color = "#333333"))
+  )
+  if (has_title)    exp$title    <- list(style = list(color = "#0D1117"))
+  if (has_subtitle) exp$subtitle <- list(style = list(color = "#333333"))
+
+  hc %>%
+    hc_add_dependency("modules/exporting.js") %>%
+    hc_add_dependency("modules/offline-exporting.js") %>%
+    hc_exporting(enabled = TRUE, fallbackToExportServer = FALSE,
+                 filename = filename, sourceWidth = 1000, sourceHeight = 560, scale = 3,
+                 chartOptions = exp,
+                 buttons = list(contextButton = list(
+                   menuItems = c("downloadSVG", "downloadPNG", "downloadPDF",
+                                 "separator", "viewFullscreen"))))
+}
 
 #----------------------------------------
 #---- SHINY DASHBOARD----
@@ -36,49 +109,53 @@ abscol <- c("#4FADE7", 	"#1A4472", 	"#F29000", 	"#993366", 	"#669966", 	"#99CC66
 #------------
 ui <- fluidPage(theme = shinytheme("darkly"),
 
-                tags$head(tags$style(HTML(
-                  "
-    .dataTables_length label,
-    .dataTables_filter label,
-    .dataTables_info {
-        color: white!important;
-    }
-
-    .paginate_button {
-        background: white!important;
-    }
-
-    thead {
-        color: white;
-    }
-
-    table.dataTable {
-        background-color: white!important;
-        color: black!important;
-    }
-
-    table.dataTable th,
-    table.dataTable td {
-        color: black!important;
-    }
-
-    table.dataTable thead th {
-        background-color: white!important;
-        color: black!important;
-    }
-
-    table.dataTable thead td {
-        background-color: white!important;
-        color: black!important;
-    }
-
-    .paginate_button,
-    .paginate_button:hover,
-    .paginate_button:active {
-        color: black!important;
-        background-color: white!important;
-        border-color: black!important;
-    }
+                # --- Dark-mode DataTables (matches shinytheme('darkly')) ---
+                tags$head(tags$style(HTML("
+.dataTables_wrapper,
+.dataTables_wrapper .dataTables_length,
+.dataTables_wrapper .dataTables_filter,
+.dataTables_wrapper .dataTables_info,
+.dataTables_wrapper .dataTables_processing,
+.dataTables_wrapper .dataTables_paginate { color: #eaeaea !important; }
+.dataTables_wrapper input[type='search'],
+.dataTables_wrapper input[type='number'],
+.dataTables_wrapper select {
+  background-color: #303030 !important; color: #eaeaea !important;
+  border: 1px solid #444 !important;
+}
+table.dataTable { background-color: transparent !important; color: #eaeaea !important; border-color: #444 !important; }
+table.dataTable thead th, table.dataTable thead td {
+  background-color: #2a2a2a !important; color: #ffffff !important;
+  border-bottom: 1px solid #444 !important;
+}
+table.dataTable tbody tr { background-color: #222 !important; color: #eaeaea !important; }
+table.dataTable tbody td,
+table.dataTable tbody th { color: #eaeaea !important; border-top: 1px solid #333 !important; }
+table.dataTable.stripe tbody tr.odd,
+table.dataTable.display tbody tr.odd { background-color: #262626 !important; }
+table.dataTable.stripe tbody tr.odd td,
+table.dataTable.display tbody tr.odd td { color: #eaeaea !important; }
+table.dataTable tbody tr:hover,
+table.dataTable.hover tbody tr:hover,
+table.dataTable.display tbody tr:hover { background-color: #375a7f !important; }
+table.dataTable tbody tr:hover td,
+table.dataTable.hover tbody tr:hover td,
+table.dataTable.display tbody tr:hover td { color: #ffffff !important; }
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+  color: #eaeaea !important; background: transparent !important;
+  border: 1px solid #444 !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+  background: #375a7f !important; color: #ffffff !important;
+  border: 1px solid #444 !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button.current,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+  background: #00bc8c !important; color: #000 !important;
+  border: 1px solid #00bc8c !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled:hover { color: #666 !important; }
     "))),
 
   headerPanel("CPI time series - weighted average of eight capital cities"),
@@ -540,6 +617,12 @@ apply_font_settings_line <- function(hc) {
           ))
     }
 
+    # ---- Finalise: crosshair tooltip + dark-on-screen / white-on-export ----
+    ttl   <- hc$x$hc_opts$title$text
+    fname <- if (is.null(ttl) || !nzchar(ttl)) "CPI_group_change" else clean_fname(ttl)
+    hc <- hc %>%
+      hc_tooltip(crosshairs = TRUE) %>%
+      style_plot(filename = fname)
 
     hc
 
@@ -609,7 +692,8 @@ apply_font_settings_line <- function(hc) {
     table <- pcb
   }
 
-  table()
+  DT::datatable(table(), rownames = FALSE,
+                options = list(pageLength = 25, scrollX = TRUE))
 
   })
 

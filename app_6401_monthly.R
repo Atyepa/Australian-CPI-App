@@ -19,6 +19,79 @@ abscol <- c("#4FADE7", "#1A4472", "#F29000", "#993366", "#669966", "#99CC66",
             "#CC9966", "#666666", "#8DD3C7", "#BEBADA", "#FB8072", "#80B1D3",
             "#FDB462", "#B3DE69", "#FCCDE5", "#D9D9D9", "#BC80BD", "#CCEBC5", "#ffcc99")
 
+#----------------------------------------------------------------------
+#---- Chart styling (matches NNPAS 2023 app) --------------------------
+#   Dark/transparent on screen (blends into shinytheme('darkly'));
+#   ALWAYS white background on export for slides/Word/PDF. Apply LAST.
+#----------------------------------------------------------------------
+
+# Sanitise a chart title into a safe export filename.
+clean_fname <- function(x) gsub("[^A-Za-z0-9]+", "_", x)
+
+style_plot <- function(hc, filename = "CPI_chart", dark = TRUE, font_px = 16) {
+
+  pal <- if (dark)
+    list(bg = "transparent", ink = "#E6EDF3", lab = "#C9D1D9",
+         grid = "#30363D", axis = "#8B949E", err = "#C9D1D9")
+  else
+    list(bg = "#FFFFFF", ink = "#0D1117", lab = "#333333",
+         grid = "#E6E6E6", axis = "#888888", err = "#333333")
+
+  fs_lab   <- paste0(font_px, "px")       # axis ticks, legend, data labels
+  fs_title <- paste0(font_px + 2, "px")   # axis titles
+
+  has_title    <- !is.null(hc$x$hc_opts$title$text)    && nzchar(hc$x$hc_opts$title$text)
+  has_subtitle <- !is.null(hc$x$hc_opts$subtitle$text) && nzchar(hc$x$hc_opts$subtitle$text)
+
+  # ---- on-screen (working) theme ----
+  hc <- hc %>%
+    hc_chart(backgroundColor = pal$bg, plotBackgroundColor = pal$bg,
+             style = list(fontFamily = "Open Sans, Arial, Helvetica, sans-serif")) %>%
+    hc_xAxis(lineColor = pal$axis, tickColor = pal$axis,
+             title  = list(style = list(color = pal$ink, fontSize = fs_title)),
+             labels = list(style = list(color = pal$lab, fontSize = fs_lab))) %>%
+    hc_yAxis(gridLineColor = pal$grid, lineColor = pal$axis, tickColor = pal$axis,
+             title  = list(style = list(color = pal$ink, fontSize = fs_title)),
+             labels = list(style = list(color = pal$lab, fontSize = fs_lab))) %>%
+    hc_legend(itemStyle = list(color = pal$ink, fontSize = fs_lab)) %>%
+    hc_plotOptions(
+      series   = list(dataLabels = list(style = list(color = pal$ink, fontSize = fs_lab, textOutline = "none"))),
+      errorbar = list(color = pal$err, whiskerLength = "30%", stemWidth = 1.5))
+  if (has_title) {
+    hc <- hc %>% hc_title(style = list(color = pal$ink))
+  } else {
+    hc <- hc %>% hc_title(text = "")
+  }
+  if (has_subtitle) hc <- hc %>% hc_subtitle(style = list(color = pal$lab))
+
+  # ---- export overrides: ALWAYS publication-light, applied only on download ----
+  exp <- list(
+    chart  = list(backgroundColor = "#FFFFFF", plotBackgroundColor = "#FFFFFF"),
+    xAxis  = list(lineColor = "#888888", tickColor = "#888888",
+                  title  = list(style = list(color = "#0D1117", fontSize = fs_title)),
+                  labels = list(style = list(color = "#333333", fontSize = fs_lab))),
+    yAxis  = list(gridLineColor = "#E6E6E6", lineColor = "#888888", tickColor = "#888888",
+                  title  = list(style = list(color = "#0D1117", fontSize = fs_title)),
+                  labels = list(style = list(color = "#333333", fontSize = fs_lab))),
+    legend = list(itemStyle = list(color = "#0D1117", fontSize = fs_lab)),
+    plotOptions = list(
+      series   = list(dataLabels = list(style = list(color = "#0D1117", fontSize = fs_lab, textOutline = "none"))),
+      errorbar = list(color = "#333333"))
+  )
+  if (has_title)    exp$title    <- list(style = list(color = "#0D1117"))
+  if (has_subtitle) exp$subtitle <- list(style = list(color = "#333333"))
+
+  hc %>%
+    hc_add_dependency("modules/exporting.js") %>%
+    hc_add_dependency("modules/offline-exporting.js") %>%
+    hc_exporting(enabled = TRUE, fallbackToExportServer = FALSE,
+                 filename = filename, sourceWidth = 1000, sourceHeight = 560, scale = 3,
+                 chartOptions = exp,
+                 buttons = list(contextButton = list(
+                   menuItems = c("downloadSVG", "downloadPNG", "downloadPDF",
+                                 "separator", "viewFullscreen"))))
+}
+
 #----------------------------------------
 #---- CPI series picker choices ---------
 #   Format: "..Display label" = "Data name"
@@ -150,18 +223,53 @@ cpi_choices <- c(
 #----------------------------------------
 ui <- fluidPage(theme = shinytheme("darkly"),
 
+  # --- Dark-mode DataTables (matches shinytheme('darkly')) ---
   tags$head(tags$style(HTML("
-    .dataTables_length label, .dataTables_filter label, .dataTables_info {
-        color: white!important; }
-    .paginate_button { background: white!important; }
-    thead { color: white; }
-    table.dataTable { background-color: white!important; color: black!important; }
-    table.dataTable th, table.dataTable td { color: black!important; }
-    table.dataTable thead th, table.dataTable thead td {
-        background-color: white!important; color: black!important; }
-    .paginate_button, .paginate_button:hover, .paginate_button:active {
-        color: black!important; background-color: white!important;
-        border-color: black!important; }
+.dataTables_wrapper,
+.dataTables_wrapper .dataTables_length,
+.dataTables_wrapper .dataTables_filter,
+.dataTables_wrapper .dataTables_info,
+.dataTables_wrapper .dataTables_processing,
+.dataTables_wrapper .dataTables_paginate { color: #eaeaea !important; }
+.dataTables_wrapper input[type='search'],
+.dataTables_wrapper input[type='number'],
+.dataTables_wrapper select {
+  background-color: #303030 !important; color: #eaeaea !important;
+  border: 1px solid #444 !important;
+}
+table.dataTable { background-color: transparent !important; color: #eaeaea !important; border-color: #444 !important; }
+table.dataTable thead th, table.dataTable thead td {
+  background-color: #2a2a2a !important; color: #ffffff !important;
+  border-bottom: 1px solid #444 !important;
+}
+table.dataTable tbody tr { background-color: #222 !important; color: #eaeaea !important; }
+table.dataTable tbody td,
+table.dataTable tbody th { color: #eaeaea !important; border-top: 1px solid #333 !important; }
+table.dataTable.stripe tbody tr.odd,
+table.dataTable.display tbody tr.odd { background-color: #262626 !important; }
+table.dataTable.stripe tbody tr.odd td,
+table.dataTable.display tbody tr.odd td { color: #eaeaea !important; }
+table.dataTable tbody tr:hover,
+table.dataTable.hover tbody tr:hover,
+table.dataTable.display tbody tr:hover { background-color: #375a7f !important; }
+table.dataTable tbody tr:hover td,
+table.dataTable.hover tbody tr:hover td,
+table.dataTable.display tbody tr:hover td { color: #ffffff !important; }
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+  color: #eaeaea !important; background: transparent !important;
+  border: 1px solid #444 !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+  background: #375a7f !important; color: #ffffff !important;
+  border: 1px solid #444 !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button.current,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+  background: #00bc8c !important; color: #000 !important;
+  border: 1px solid #00bc8c !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled:hover { color: #666 !important; }
   "))),
 
   headerPanel("Monthly CPI - weighted average of eight capital cities"),
@@ -369,7 +477,7 @@ server <- function(input, output, session) {
     title_sfx <- paste0(m1, " to ", m2)
 
     # ---- Index ----
-    if (input$choosetable == "index") {
+    hc <- if (input$choosetable == "index") {
       dfc() %>%
         hchart(type = "line", hcaes(x = Date, y = `Index value`, group = CPI_components)) %>%
         hc_xAxis(title = list(text = "Month"), crosshair = TRUE) %>%
@@ -444,6 +552,13 @@ server <- function(input, output, session) {
     } else {
       null_chart("Select a view")
     }
+
+    # ---- Finalise: crosshair tooltip + dark-on-screen / white-on-export ----
+    ttl   <- hc$x$hc_opts$title$text
+    fname <- if (is.null(ttl) || !nzchar(ttl)) "Monthly_CPI_6401" else clean_fname(ttl)
+    hc %>%
+      hc_tooltip(crosshairs = TRUE) %>%
+      style_plot(filename = fname)
   })
 
 
@@ -500,7 +615,10 @@ server <- function(input, output, session) {
     index_tbl()
   })
 
-  output$table <- DT::renderDataTable({ active_tbl() })
+  output$table <- DT::renderDataTable({
+    DT::datatable(active_tbl(), rownames = FALSE,
+                  options = list(pageLength = 25, scrollX = TRUE))
+  })
 
   output$downloadTb <- downloadHandler(
     filename = function() { paste("Monthly CPI 6401", input$choosetable, ".xlsx") },
