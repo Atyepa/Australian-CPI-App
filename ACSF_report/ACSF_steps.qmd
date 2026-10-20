@@ -1,0 +1,202 @@
+---
+title: "ACSF processing: key steps"
+subtitle: "Apparent Consumption of Selected Foodstuffs - reference period `r params$ref_period`"
+author: "Paul"
+date: today
+date-format: "D MMMM YYYY"
+params:
+  ref_period: "2023-24"
+  demo: true                  # true = fake data so it renders anywhere; false = real pipeline outputs
+  data_dir: "data"            # where the pipeline drops its .rds/.csv outputs
+format:
+  html:
+    theme: darkly
+    embed-resources: true     # single self-contained .html - email it, park it on a share drive
+    toc: true
+    toc-depth: 2
+    toc-location: left
+    number-sections: true
+    code-fold: true
+    code-summary: "Show code"
+    fig-width: 10
+    fig-height: 5
+execute:
+  echo: false                 # flip to true (or use code-fold) when the audience wants the workings
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(highcharter)
+library(DT)
+library(knitr)
+
+# Same plot builders the Shiny apps use - see R/acsf_plot_helpers.R
+source("R/acsf_plot_helpers.R")
+```
+
+```{r}
+#| label: load-data
+#| include: false
+
+if (params$demo) {
+  dat <- make_demo_data()
+} else {
+  # TODO: point these at the real pipeline outputs. Save them from the pipeline as .rds
+  # (keeps column types; much faster than re-running SAS/PROC SQL extracts at render time).
+  dat <- list(
+    ts_weekly      = read_rds(file.path(params$data_dir, "ts_weekly.rds")),
+    coding_items   = read_rds(file.path(params$data_dir, "coding_items.rds")),
+    coding_summary = read_rds(file.path(params$data_dir, "coding_summary.rds")),
+    sales_vis      = read_rds(file.path(params$data_dir, "sales_vis.rds"))
+  )
+}
+```
+
+```{r}
+#| label: demo-banner
+#| results: asis
+
+if (params$demo) {
+  cat('::: {.callout-warning appearance="simple"}',
+      "**Demo mode** - all figures below use simulated data. Render with `demo: false` for the real thing.",
+      ":::", sep = "\n")
+}
+```
+
+# Overview
+
+<!-- One paragraph: what this document is for, who it's for, what's been signed off. -->
+
+This document collates the key steps in producing ACSF for **`r params$ref_period`**: data receipt,
+weekly time-series checks, product coding to AUSNUT, and the final sales outputs.
+
+```{r}
+#| label: tbl-key-checks
+#| tbl-cap: "Summary of key checks"
+
+# TODO: replace with real QA results computed from `dat`
+tibble(
+  Step   = c("Data receipt", "Weekly TS checks", "Coding coverage", "Sales outputs"),
+  Check  = c("All retailers / weeks received",
+             "No unexplained breaks post adjustment",
+             "Uncoded share of sales below threshold",
+             "Movements vs previous period explained"),
+  Status = c("✅", "✅", "⚠️", "⏳"),
+  Notes  = c("", "", "See @sec-coding", "")
+) %>%
+  kable()
+```
+
+# Data receipt {#sec-receipt}
+
+<!-- Source files, retailers, weeks covered, row counts, anything late or resupplied. -->
+
+```{r}
+#| label: receipt-summary
+
+dat$ts_weekly %>%
+  filter(stage == "Pre") %>%
+  summarise(`First week` = min(week), `Last week` = max(week),
+            Weeks = n_distinct(week), Series = n_distinct(series)) %>%
+  kable()
+```
+
+# Weekly time series (App_ts_weekly) {#sec-ts}
+
+<!-- What was adjusted and why. Call out specific weeks. -->
+
+```{r}
+#| label: fig-ts-weekly
+#| fig-cap: "Weekly sales, pre and post adjustment"
+
+plot_ts_weekly(dat$ts_weekly)
+```
+
+::: {.callout-note collapse="true"}
+## Adjustment notes
+- Week of ...: retailer resupply, ...
+- Week of ...: outlier treated by ...
+:::
+
+## Size of adjustments
+
+```{r}
+#| label: tbl-adjustments
+#| tbl-cap: "Largest weekly adjustments (post minus pre)"
+
+dat$ts_weekly %>%
+  pivot_wider(names_from = stage, values_from = value) %>%
+  mutate(Diff = Post - Pre, `Diff (%)` = 100 * Diff / Pre) %>%
+  slice_max(abs(Diff), n = 10) %>%
+  kable(digits = 1)
+```
+
+# Coding management {#sec-coding}
+
+<!-- New products this period, auto-coding hit rate, what's still outstanding. -->
+
+::: {.panel-tabset}
+## By sales value
+```{r}
+#| label: fig-coding-sales
+plot_coding_coverage(dat$coding_summary, measure = "sales",
+                     title = "Coding coverage - share of sales value")
+```
+
+## By item count
+```{r}
+#| label: fig-coding-items
+plot_coding_coverage(dat$coding_summary, measure = "n_items",
+                     title = "Coding coverage - share of items")
+```
+:::
+
+## Top uncoded items
+
+```{r}
+#| label: tbl-uncoded
+table_uncoded(dat$coding_items, n = 20)
+```
+
+# ACSF sales outputs (ACSF sales vis) {#sec-sales}
+
+<!-- Headline movements vs last period, anything that needs a footnote in the release. -->
+
+```{r}
+#| label: fig-sales-vis
+#| fig-height: 6
+#| fig-cap: "Apparent consumption by ADG food group"
+
+plot_sales_vis(dat$sales_vis)
+```
+
+# Sign-off
+
+| Role | Name | Date |
+|------|------|------|
+| Analyst | | |
+| Reviewer | | |
+
+# Appendix
+
+## Live apps
+
+<!-- Optional: embed the live app when it's somewhere the reader can reach. Note that an
+     iframe needs the app running/hosted - it won't work for a reader without access. -->
+
+```{=html}
+<!-- <iframe src="https://<your-shiny-server>/App_ts_weekly/" width="100%" height="700" style="border:none;"></iframe> -->
+```
+
+## Session info
+
+```{r}
+#| label: session-info
+#| echo: false
+sessionInfo()
+```
