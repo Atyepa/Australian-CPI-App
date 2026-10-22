@@ -12,6 +12,7 @@
 #   - App_ts_weekly        -> plot_ts_weekly()
 #   - Coding management    -> plot_coding_coverage(), table_uncoded()
 #   - ACSF sales vis       -> plot_sales_vis()
+#   - App_wt_compare       -> plot_wt_compare()
 #===================================================================================================
 
 library(tidyverse)
@@ -137,6 +138,27 @@ plot_sales_vis <- function(df, type = "bar", y_lab = "Grams per capita per day",
 }
 
 #----------------------------------------------------------------------
+#---- 4. App_wt_compare -----------------------------------------------
+# Weights before vs after (e.g. previous vs current release), by expenditure class.
+# Expects: ec (chr), wt_old (dbl), wt_new (dbl)
+#----------------------------------------------------------------------
+plot_wt_compare <- function(df, n = 20, title = "Weights: previous vs current") {
+  df %>%
+    mutate(diff = wt_new - wt_old) %>%
+    slice_max(abs(diff), n = n) %>%
+    arrange(diff) %>%
+    hchart("dumbbell", hcaes(x = ec, low = wt_old, high = wt_new), name = "Weight") %>%
+    hc_add_dependency("modules/dumbbell.js") %>%   # dumbbell isn't in core Highcharts
+    hc_chart(inverted = TRUE) %>%
+    hc_title(text = title) %>%
+    hc_subtitle(text = paste("Largest", n, "changes. Low end = previous, high end = current")) %>%
+    hc_xAxis(title = list(text = NULL)) %>%
+    hc_yAxis(title = list(text = "Weight (%)")) %>%
+    hc_tooltip(valueDecimals = 2) %>%
+    style_hc(filename = title)
+}
+
+#----------------------------------------------------------------------
 #---- Demo data -------------------------------------------------------
 # Fake data with the same shape as the real inputs, so the report renders end-to-end
 # before anything is wired up (and outside the ABS network). Delete once real loaders exist.
@@ -174,8 +196,13 @@ make_demo_data <- function(seed = 2024) {
   ) %>%
     mutate(value = runif(n(), 80, 400))
 
+  wt_compare <- tibble(ec = paste("EC", sprintf("%02d", 1:40)),
+                       wt_old = runif(40, 0.5, 5)) %>%
+    mutate(wt_new = pmax(wt_old + rnorm(40, 0, 0.4), 0))
+
   list(ts_weekly      = ts_weekly,
        coding_items   = coding_items,
        coding_summary = coding_summary,
-       sales_vis      = sales_vis)
+       sales_vis      = sales_vis,
+       wt_compare     = wt_compare)
 }

@@ -6,16 +6,23 @@ ACSF Shiny apps (App_ts_weekly, Coding management, ACSF sales vis).
 ```
 ACSF_report/
 ├── ACSF_steps.qmd            # the report
-├── R/acsf_plot_helpers.R     # plot builders shared with the Shiny apps + demo data
-└── data/                     # pipeline outputs (.rds) when demo: false
+├── R/acsf_app_loader.R       # runs each app minus shinyApp() to get its startup data
+└── R/acsf_plot_helpers.R     # plot builders shared with the Shiny apps + demo data
 ```
 
 ## Render
 
 ```bash
-quarto render ACSF_steps.qmd                       # demo data
-quarto render ACSF_steps.qmd -P demo:false         # real pipeline outputs in data/
-quarto render ACSF_steps.qmd -P ref_period:2024-25 -P demo:false
+quarto render ACSF_steps.qmd                       # loads the real apps from params$root
+quarto render ACSF_steps.qmd -P demo:true          # simulated data only, renders anywhere
+quarto render ACSF_steps.qmd -P ref_period:2024-25
+```
+
+## Getting the chart code out of an app
+
+```r
+source("R/acsf_app_loader.R")
+dump_render_code("C:/Users/Atyeo/OneDrive/R data/ACSF weekly/App_ts_weekly.R", "render_ts_weekly.txt")
 ```
 
 Output is a single self-contained `ACSF_steps.html` (`embed-resources: true`).

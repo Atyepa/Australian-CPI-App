@@ -6,8 +6,8 @@ date: today
 date-format: "D MMMM YYYY"
 params:
   ref_period: "2023-24"
-  demo: true                  # true = fake data so it renders anywhere; false = real pipeline outputs
-  data_dir: "data"            # where the pipeline drops its .rds/.csv outputs
+  demo: false                 # true = skip the apps entirely, simulated data only (renders anywhere)
+  root: "C:/Users/Atyeo/OneDrive/R data"
 format:
   html:
     theme: darkly
@@ -31,41 +31,47 @@ execute:
 #| include: false
 
 library(tidyverse)
-library(highcharter)
-library(DT)
 library(knitr)
 
-# Same plot builders the Shiny apps use - see R/acsf_plot_helpers.R
-source("R/acsf_plot_helpers.R")
+source("R/acsf_app_loader.R")
 ```
 
 ```{r}
-#| label: load-data
+#| label: load-apps
 #| include: false
 
-if (params$demo) {
-  dat <- make_demo_data()
-} else {
-  # TODO: point these at the real pipeline outputs. Save them from the pipeline as .rds
-  # (keeps column types; much faster than re-running SAS/PROC SQL extracts at render time).
-  dat <- list(
-    ts_weekly      = read_rds(file.path(params$data_dir, "ts_weekly.rds")),
-    coding_items   = read_rds(file.path(params$data_dir, "coding_items.rds")),
-    coding_summary = read_rds(file.path(params$data_dir, "coding_summary.rds")),
-    sales_vis      = read_rds(file.path(params$data_dir, "sales_vis.rds"))
-  )
-}
+# Each app is run minus its shinyApp() call, so we get exactly the data it builds at
+# startup - same files, same loading code. See R/acsf_app_loader.R.
+APP_FILES <- c(
+  sales_vis  = "ACSF app/app.R",
+  ts_weekly  = "ACSF weekly/App_ts_weekly.R",
+  coding     = "Coding mgt app/app.R",
+  wt_compare = "Coding mgt app/App_wt_compare.R"
+) %>%
+  map_chr(\(f) file.path(params$root, f))
+
+apps <- if (params$demo) list() else map(APP_FILES, safe_load_app)
+
+# Sourced AFTER the apps, so if an app's custom_styles.R defines something with the
+# same name, the report's version wins.
+source("R/acsf_plot_helpers.R")
+
+# TODO: charts still run on simulated data. Replace each piece with the real object
+# from `apps` as the plot functions get wired up, e.g.
+#   dat$coding_items <- get("<object name>", envir = apps$coding)
+dat <- make_demo_data()
 ```
 
 ```{r}
 #| label: demo-banner
 #| results: asis
 
-if (params$demo) {
-  cat('::: {.callout-warning appearance="simple"}',
-      "**Demo mode** - all figures below use simulated data. Render with `demo: false` for the real thing.",
-      ":::", sep = "\n")
-}
+msg <- if (params$demo)
+  "**Demo mode** - apps not loaded; everything below is simulated."
+else
+  "**Work in progress** - apps are loaded (see @sec-sources) but charts still use simulated data until the plot functions are wired up."
+
+cat('::: {.callout-warning appearance="simple"}', msg, ":::", sep = "\n")
 ```
 
 # Overview
@@ -73,7 +79,7 @@ if (params$demo) {
 <!-- One paragraph: what this document is for, who it's for, what's been signed off. -->
 
 This document collates the key steps in producing ACSF for **`r params$ref_period`**: data receipt,
-weekly time-series checks, product coding to AUSNUT, and the final sales outputs.
+weekly time-series checks, product coding to AUSNUT, weight comparisons, and the final sales outputs.
 
 ```{r}
 #| label: tbl-key-checks
@@ -81,15 +87,34 @@ weekly time-series checks, product coding to AUSNUT, and the final sales outputs
 
 # TODO: replace with real QA results computed from `dat`
 tibble(
-  Step   = c("Data receipt", "Weekly TS checks", "Coding coverage", "Sales outputs"),
+  Step   = c("Data receipt", "Weekly TS checks", "Coding coverage", "Weights", "Sales outputs"),
   Check  = c("All retailers / weeks received",
              "No unexplained breaks post adjustment",
              "Uncoded share of sales below threshold",
+             "Large weight changes explained",
              "Movements vs previous period explained"),
-  Status = c("✅", "✅", "⚠️", "⏳"),
-  Notes  = c("", "", "See @sec-coding", "")
+  Status = c("✅", "✅", "⚠️", "⏳", "⏳"),
+  Notes  = c("", "", "See @sec-coding", "", "")
 ) %>%
   kable()
+```
+
+# Data sources {#sec-sources}
+
+What each app loaded at startup. A **LOAD FAILED** row means the app itself couldn't start;
+the message is the error the app would have shown.
+
+```{r}
+#| label: tbl-sources
+#| tbl-cap: "Data objects built by each app"
+
+if (length(apps)) {
+  imap(apps, \(env, app) app_inventory(env) %>% mutate(app = app, .before = 1)) %>%
+    list_rbind() %>%
+    kable()
+} else {
+  cat("Demo mode: apps not loaded.")
+}
 ```
 
 # Data receipt {#sec-receipt}
@@ -163,6 +188,18 @@ plot_coding_coverage(dat$coding_summary, measure = "n_items",
 table_uncoded(dat$coding_items, n = 20)
 ```
 
+# Weights (App_wt_compare) {#sec-weights}
+
+<!-- What changed between weight sets, and why the big movers moved. -->
+
+```{r}
+#| label: fig-wt-compare
+#| fig-height: 7
+#| fig-cap: "Largest weight changes by expenditure class"
+
+plot_wt_compare(dat$wt_compare)
+```
+
 # ACSF sales outputs (ACSF sales vis) {#sec-sales}
 
 <!-- Headline movements vs last period, anything that needs a footnote in the release. -->
@@ -184,19 +221,9 @@ plot_sales_vis(dat$sales_vis)
 
 # Appendix
 
-## Live apps
-
-<!-- Optional: embed the live app when it's somewhere the reader can reach. Note that an
-     iframe needs the app running/hosted - it won't work for a reader without access. -->
-
-```{=html}
-<!-- <iframe src="https://<your-shiny-server>/App_ts_weekly/" width="100%" height="700" style="border:none;"></iframe> -->
-```
-
 ## Session info
 
 ```{r}
 #| label: session-info
-#| echo: false
 sessionInfo()
 ```
