@@ -66,10 +66,11 @@ dat <- make_demo_data()
 #| label: demo-banner
 #| results: asis
 
-msg <- if (params$demo)
+msg <- if (params$demo) {
   "**Demo mode** - apps not loaded; everything below is simulated."
-else
+} else {
   "**Work in progress** - apps are loaded (see @sec-sources) but charts still use simulated data until the plot functions are wired up."
+}
 
 cat('::: {.callout-warning appearance="simple"}', msg, ":::", sep = "\n")
 ```
