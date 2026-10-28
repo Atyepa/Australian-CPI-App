@@ -19,9 +19,14 @@ abscol <- c("#4FADE7", "#1A4472", "#F29000", "#993366", "#669966", "#99CC66",
             "#CC9966", "#666666", "#8DD3C7", "#BEBADA", "#FB8072", "#80B1D3",
             "#FDB462", "#B3DE69", "#FCCDE5", "#D9D9D9", "#BC80BD", "#CCEBC5", "#ffcc99")
 
+#--- Dark mode: ABS navy (#1A4472) is unreadable on the dark background,
+#    so it is swapped for this on screen (kept in light mode and on export) ---
+navy_dark <- "#8C9EFF"
+
 #----------------------------------------------------------------------
 #---- Chart styling (matches NNPAS 2023 app) --------------------------
-#   Dark/transparent on screen (blends into shinytheme('darkly'));
+#   Dark mode: transparent on screen (blends into shinytheme('darkly'));
+#   Light mode: white on screen (matches shinytheme('flatly')).
 #   ALWAYS white background on export for slides/Word/PDF. Apply LAST.
 #----------------------------------------------------------------------
 
@@ -36,6 +41,10 @@ style_plot <- function(hc, filename = "CPI_chart", dark = TRUE, font_px = 16) {
   else
     list(bg = "#FFFFFF", ink = "#0D1117", lab = "#333333",
          grid = "#E6E6E6", axis = "#888888", err = "#333333")
+
+  # Swap ABS navy for its dark-mode stand-in on screen only
+  cols <- hc$x$hc_opts$colors
+  if (dark && !is.null(cols)) hc$x$hc_opts$colors <- replace(cols, toupper(cols) == "#1A4472", navy_dark)
 
   fs_lab   <- paste0(font_px, "px")       # axis ticks, legend, data labels
   fs_title <- paste0(font_px + 2, "px")   # axis titles
@@ -80,6 +89,7 @@ style_plot <- function(hc, filename = "CPI_chart", dark = TRUE, font_px = 16) {
   )
   if (has_title)    exp$title    <- list(style = list(color = "#0D1117"))
   if (has_subtitle) exp$subtitle <- list(style = list(color = "#333333"))
+  if (!is.null(cols)) exp$colors <- cols   # original palette (incl. navy) on export
 
   hc %>%
     hc_add_dependency("modules/exporting.js") %>%
@@ -223,53 +233,66 @@ cpi_choices <- c(
 #----------------------------------------
 ui <- fluidPage(theme = shinytheme("darkly"),
 
-  # --- Dark-mode DataTables (matches shinytheme('darkly')) ---
+  # --- Light/dark toggle: swaps darkly <-> flatly and tags <body> ---
+  tags$head(tags$script(HTML("
+$(document).on('change', '#light_mode', function() {
+  var light = this.checked;
+  $('body').toggleClass('light-mode', light);
+  $('link[href*=\"shinythemes/css/\"]').attr('href', function(i, h) {
+    return light ? h.replace('darkly', 'flatly') : h.replace('flatly', 'darkly');
+  });
+});
+  "))),
+  tags$div(style = "text-align: right; margin: 10px 0 -15px 0;",
+           materialSwitch("light_mode", "Light mode", value = FALSE, status = "info")),
+
+  # --- Dark-mode DataTables (matches shinytheme('darkly')); off in light mode ---
   tags$head(tags$style(HTML("
-.dataTables_wrapper,
-.dataTables_wrapper .dataTables_length,
-.dataTables_wrapper .dataTables_filter,
-.dataTables_wrapper .dataTables_info,
-.dataTables_wrapper .dataTables_processing,
-.dataTables_wrapper .dataTables_paginate { color: #eaeaea !important; }
-.dataTables_wrapper input[type='search'],
-.dataTables_wrapper input[type='number'],
-.dataTables_wrapper select {
+body:not(.light-mode) .dataTables_wrapper,
+body:not(.light-mode) .dataTables_wrapper .dataTables_length,
+body:not(.light-mode) .dataTables_wrapper .dataTables_filter,
+body:not(.light-mode) .dataTables_wrapper .dataTables_info,
+body:not(.light-mode) .dataTables_wrapper .dataTables_processing,
+body:not(.light-mode) .dataTables_wrapper .dataTables_paginate { color: #eaeaea !important; }
+body:not(.light-mode) .dataTables_wrapper input[type='search'],
+body:not(.light-mode) .dataTables_wrapper input[type='number'],
+body:not(.light-mode) .dataTables_wrapper select {
   background-color: #303030 !important; color: #eaeaea !important;
   border: 1px solid #444 !important;
 }
-table.dataTable { background-color: transparent !important; color: #eaeaea !important; border-color: #444 !important; }
-table.dataTable thead th, table.dataTable thead td {
+body:not(.light-mode) table.dataTable { background-color: transparent !important; color: #eaeaea !important; border-color: #444 !important; }
+body:not(.light-mode) table.dataTable thead th, body:not(.light-mode) table.dataTable thead td {
   background-color: #2a2a2a !important; color: #ffffff !important;
   border-bottom: 1px solid #444 !important;
 }
-table.dataTable tbody tr { background-color: #222 !important; color: #eaeaea !important; }
-table.dataTable tbody td,
-table.dataTable tbody th { color: #eaeaea !important; border-top: 1px solid #333 !important; }
-table.dataTable.stripe tbody tr.odd,
-table.dataTable.display tbody tr.odd { background-color: #262626 !important; }
-table.dataTable.stripe tbody tr.odd td,
-table.dataTable.display tbody tr.odd td { color: #eaeaea !important; }
-table.dataTable tbody tr:hover,
-table.dataTable.hover tbody tr:hover,
-table.dataTable.display tbody tr:hover { background-color: #375a7f !important; }
-table.dataTable tbody tr:hover td,
-table.dataTable.hover tbody tr:hover td,
-table.dataTable.display tbody tr:hover td { color: #ffffff !important; }
-.dataTables_wrapper .dataTables_paginate .paginate_button {
+body:not(.light-mode) table.dataTable tbody tr { background-color: #222 !important; color: #eaeaea !important; }
+body:not(.light-mode) table.dataTable tbody td,
+body:not(.light-mode) table.dataTable tbody th { color: #eaeaea !important; border-top: 1px solid #333 !important; }
+body:not(.light-mode) table.dataTable.stripe tbody tr.odd,
+body:not(.light-mode) table.dataTable.display tbody tr.odd { background-color: #262626 !important; }
+body:not(.light-mode) table.dataTable.stripe tbody tr.odd td,
+body:not(.light-mode) table.dataTable.display tbody tr.odd td { color: #eaeaea !important; }
+body:not(.light-mode) table.dataTable tbody tr:hover,
+body:not(.light-mode) table.dataTable.hover tbody tr:hover,
+body:not(.light-mode) table.dataTable.display tbody tr:hover { background-color: #375a7f !important; }
+body:not(.light-mode) table.dataTable tbody tr:hover td,
+body:not(.light-mode) table.dataTable.hover tbody tr:hover td,
+body:not(.light-mode) table.dataTable.display tbody tr:hover td { color: #ffffff !important; }
+body:not(.light-mode) .dataTables_wrapper .dataTables_paginate .paginate_button {
   color: #eaeaea !important; background: transparent !important;
   border: 1px solid #444 !important;
 }
-.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+body:not(.light-mode) .dataTables_wrapper .dataTables_paginate .paginate_button:hover {
   background: #375a7f !important; color: #ffffff !important;
   border: 1px solid #444 !important;
 }
-.dataTables_wrapper .dataTables_paginate .paginate_button.current,
-.dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+body:not(.light-mode) .dataTables_wrapper .dataTables_paginate .paginate_button.current,
+body:not(.light-mode) .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
   background: #00bc8c !important; color: #000 !important;
   border: 1px solid #00bc8c !important;
 }
-.dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
-.dataTables_wrapper .dataTables_paginate .paginate_button.disabled:hover { color: #666 !important; }
+body:not(.light-mode) .dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
+body:not(.light-mode) .dataTables_wrapper .dataTables_paginate .paginate_button.disabled:hover { color: #666 !important; }
   "))),
 
   headerPanel("Monthly CPI - weighted average of eight capital cities"),
@@ -553,12 +576,12 @@ server <- function(input, output, session) {
       null_chart("Select a view")
     }
 
-    # ---- Finalise: crosshair tooltip + dark-on-screen / white-on-export ----
+    # ---- Finalise: crosshair tooltip + dark/light on screen / white-on-export ----
     ttl   <- hc$x$hc_opts$title$text
     fname <- if (is.null(ttl) || !nzchar(ttl)) "Monthly_CPI_6401" else clean_fname(ttl)
     hc %>%
       hc_tooltip(crosshairs = TRUE) %>%
-      style_plot(filename = fname)
+      style_plot(filename = fname, dark = !isTRUE(input$light_mode))
   })
 
 
